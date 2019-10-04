@@ -1,81 +1,89 @@
 #!/bin/bash
 reset(){
-    current_file=-1
-    tput civis -- invisible
-    tput cnorm -- normal
+    current_file=1
     total_items=0
-    tput clear
+    tput cup 0 0
 }
 
 draw_bar(){
     tput cup $rows 0
     echo -e -n "\e[46m$bar"
     tput cup $rows 0
-    ((current_line++))
-    echo -e -n "\e[97m$PWD ($current_line/$total_items)"
-    ((current_line--))
+    echo -e -n "\e[97m$PWD ($current_line/${#list[@]})"
     echo -e -n "\e[0m"
 }
 
+load_files(){
+    local dirs
+    local files
+
+    dirs+=(".")
+    dirs+=("..")
+
+    for item in "$PWD"/*
+    do
+        if [[ -d $item ]]
+        then
+            dirs+=("${item##*/}")
+        else
+            files+=("${item##*/}")
+        fi
+    done
+    list=("${dirs[@]}" "${files[@]}")
+}
+
 print_files(){
-    #Print directories then files.
-    IFS=$'\r\n' GLOBIGNORE='*' command eval  'dirs=($(ls -p -a | grep /))'
-    echo -e -n "\e[96m"
-    for i in "${dirs[@]}"
+
+    local line=0
+    local offset=0
+    ((offset=current_line-rows+6))
+    if ((offset < 0))
+    then
+        offset=0
+    fi
+    for item in "${list[@]:$offset}"
     do
-        if (( current_line == total_items ))
+        ((line++))
+        if (( line == current_line - offset))
         then
-            highlight
-            echo -e  "${i}"
-            un_highlight_dir
-        else
-            echo -e  "${i}"
+            echo -n ">>"
         fi
-        ((total_items++))
-        if (( total_items == rows ))
+        if [[ -d $item ]];then
+            echo -e -n "\e[96m"
+            echo "/$item                    "
+
+        elif [[ -x $item ]];then
+            echo -e -n "\e[92m"
+            echo "$item                     "
+
+        elif [[ -f $item ]];then
+            echo -e -n "\e[97m"
+            echo "$item                     "
+        fi
+        echo -e -n "\e[0m"
+        if ((line == rows - 1))
         then
-            return
+            break
         fi
     done
-    IFS=$'\r\n' GLOBIGNORE='*' command eval  'files=($(ls -p -a| grep -v /))'
-    echo -e -n "\e[97m"
-    count=0
-    for i in "${files[@]}"
-    do
-        if (( current_line == total_items ))
-        then
-            highlight
-            echo -e  "${i}"
-            current_file=$count
-            un_highlight_file
-        else
-            echo -e  "${i}"
-        fi
-        ((total_items++))
-        if (( total_items == rows ))
-        then
-            return
-        fi
-        ((count++))
-    done
-    echo -e -n "\e[39m"
 }
 
 get_input(){
-    read -r -n1 input
+    read -s -n1 input
+    printf '\e[?25l'
     if [ "$input" = "q" ]
     then
         tput clear
     elif [ "$input" = "j" ]
     then
-        if (( current_line != (total_items - 1) ))
+        if (( current_line != ${#list[@]} ))
         then
             ((current_line++))
         fi
             redraw
     elif [ "$input" = "k" ]
     then
-        if (( current_line != 0 ))
+        if (( current_line != 1 ))
         then
             ((current_line--))
         fi
@@ -83,14 +91,20 @@ get_input(){
     elif [ "$input" = "c" ]
     then
         # Enter key (changes dir)
-        if ((current_file == -1))
+        ((current_line--))
+        if [[ -d ${list[$current_line]} ]]
         then
-            cd ${dirs[$current_line]}
+            cd ${list[$current_line]}
+            tput clear
+            load_files
+            current_line=1
             redraw
+            ((current_line++))
         else
             tput clear
             tput cup 0 0
-            less ${files[$current_file]}
+            less ${list[$current_line]}
+            ((current_line++))
             redraw
         fi
     else
@@ -105,25 +119,12 @@ redraw(){
     get_input
 }
 
-highlight(){
-    echo -e -n "\e[106m"
-    echo -e -n "\e[30m"
-}
-
-un_highlight_dir(){
-    echo -e -n "\e[96m"
-    echo -e -n "\e[49m"
-}
-
-un_highlight_file(){
-    echo -e -n "\e[97m"
-    echo -e -n "\e[49m"
-}
 declare -A map
 cols=$(tput cols)
 rows=$(tput lines)
-
-bar=`printf ' %.0s' $(seq 1 $cols)`
+tput clear
+bar=`printf ' %.0s' $(seq 1 15)`
 total_items=0
-current_line=0
+current_line=1
+load_files
 redraw
